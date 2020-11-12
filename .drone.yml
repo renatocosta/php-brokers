@@ -1,0 +1,79 @@
+kind: pipeline
+name: default
+type: docker
+trigger:
+  event:
+    - push
+    - tag
+  branch:
+    - master
+    - hotfix/*
+    - feature/*
+platform:
+  os: linux
+  arch: amd64
+services:
+  - name: kafka
+    image: spotify/kafka:latest
+    environment:
+      TOPICS: test
+      ADVERTISED_HOST: kafka
+      ADVERTISED_PORT: 9092
+    ports:
+      - 9092
+      - 2181
+  - name: beanstalkd
+    image: schickling/beanstalkd
+    ports:
+      - 11300
+  - name: redis
+    image: redis
+    ports:
+      - 6379
+steps:
+  - name: install-dependencies
+    pull: if-not-exists
+    image: adrianolaselva/php-74-fpm-rdkafka:1.0.1
+    commands:
+      - composer install --prefer-dist --no-progress --no-suggest
+    environment:
+      PICPAY_BROKER_KAFKA_GROUP_ID: test
+      PICPAY_BROKER_KAFKA_BROKERS: kafka:9092
+      PICPAY_BROKER_KAFKA_AUTO_OFFSET_RESET: earliest
+      PICPAY_BROKER_BEANSTALKD_HOST: beanstalkd
+      PICPAY_BROKER_BEANSTALKD_PORT: 11300
+      PICPAY_BROKER_REDIS_HOST: redis
+      PICPAY_BROKER_REDIS_PORT: 6379
+  - name: phpcs
+    pull: if-not-exists
+    image: adrianolaselva/php-74-fpm-rdkafka:1.0.1
+    commands:
+      - ./vendor/bin/phpcs --standard=phpcs.xml -p src
+  - name: test-unit
+    pull: if-not-exists
+    image: adrianolaselva/php-74-fpm-rdkafka:1.0.1
+    commands:
+      - cp phpunit.xml.dist phpunit.xml
+      - ./vendor/bin/phpunit -vvv
+    environment:
+      PICPAY_BROKER_KAFKA_GROUP_ID: test
+      PICPAY_BROKER_KAFKA_BROKERS: kafka:9092
+      PICPAY_BROKER_KAFKA_AUTO_OFFSET_RESET: earliest
+      PICPAY_BROKER_BEANSTALKD_HOST: beanstalkd
+      PICPAY_BROKER_BEANSTALKD_PORT: 11300
+      PICPAY_BROKER_REDIS_HOST: redis
+      PICPAY_BROKER_REDIS_PORT: 6379
+
+#  - name: coverage
+#    pull: if-not-exists
+#    image: adrianolaselva/php-74-fpm-rdkafka:1.0.1
+#    commands:
+#      - ./vendor/bin/codacycoverage clover
+#    environment:
+#      PICPAY_BROKER_KAFKA_GROUP_ID: test
+#      PICPAY_BROKER_KAFKA_BROKERS: kafka:9092
+#      PICPAY_BROKER_KAFKA_AUTO_OFFSET_RESET: earliest
+#      PICPAY_BROKER_BEANSTALKD_HOST: beanstalkd
+#      PICPAY_BROKER_BEANSTALKD_PORT: 11300
+#      CODACY_PROJECT_TOKEN:
+#        from_secret: CODACY_PROJECT_TOKEN
